@@ -1,19 +1,18 @@
+import { cache } from 'react'
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 
-export async function checkRole(allowedRoles: ('admin' | 'principal' | 'marketing')[]) {
+export const getSessionUser = cache(async () => {
   const supabase = await createClient()
   
   // 1. Get authenticated user
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    redirect('/login')
-  }
+  if (!user) return null
 
   // 2. Fetch role from public.users profile table
   let { data: profile } = await supabase
     .from('users')
-    .select('role')
+    .select('id, username, nama, role, is_active')
     .eq('id', user.id)
     .maybeSingle()
 
@@ -35,14 +34,23 @@ export async function checkRole(allowedRoles: ('admin' | 'principal' | 'marketin
       .insert(newProfile)
 
     if (!insertError) {
-      profile = { role: newProfile.role }
+      profile = newProfile
     } else {
       console.error('RBAC Sync Profile Error:', insertError)
-      profile = { role: newProfile.role }
+      profile = newProfile
     }
   }
 
-  // Handle mapping owner -> principal
+  return { user, profile }
+})
+
+export async function checkRole(allowedRoles: ('admin' | 'principal' | 'marketing')[]) {
+  const session = await getSessionUser()
+  if (!session) {
+    redirect('/login')
+  }
+  
+  const { user, profile } = session
   const activeRole = (profile.role === 'owner' ? 'principal' : profile.role) as 'admin' | 'principal' | 'marketing'
 
   if (!allowedRoles.includes(activeRole)) {
@@ -54,21 +62,7 @@ export async function checkRole(allowedRoles: ('admin' | 'principal' | 'marketin
 }
 
 export async function getUserRole() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-
-  let { data: profile } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  if (!profile) {
-    let metaRole = user.user_metadata.role || 'marketing'
-    if (metaRole === 'owner') metaRole = 'principal'
-    return metaRole
-  }
-
-  return profile.role === 'owner' ? 'principal' : profile.role
+  const session = await getSessionUser()
+  if (!session) return null
+  return session.profile.role === 'owner' ? 'principal' : session.profile.role
 }

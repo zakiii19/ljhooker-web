@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/utils/supabase/server'
+import { getSessionUser } from '@/utils/rbac'
 import { logout } from '../login/actions'
 import {
   LayoutDashboard,
@@ -19,22 +19,14 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user) {
+  const session = await getSessionUser()
+  if (!session) {
     redirect('/login')
   }
 
-  // Get user profile from public.users table to fetch the role
-  const { data: profile } = await supabase
-    .from('users')
-    .select('nama, role')
-    .eq('id', user.id)
-    .maybeSingle()
-
-  const userName = profile?.nama || user.user_metadata.nama || 'Pengguna'
-  const userRole = profile?.role || user.user_metadata.role || 'marketing'
+  const { user, profile } = session
+  const userName = profile.nama || user.user_metadata.nama || 'Pengguna'
+  const userRole = profile.role || user.user_metadata.role || 'marketing'
 
   const getRoleLabel = (role: string) => {
     switch (role) {
